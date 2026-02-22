@@ -15,6 +15,7 @@
             --bg-color: #fcfaf7;
             --text-main: #5d4a3a;
             --accent-coffee: #8b5e3c;
+            --light-coffee: #d7ccc8;
             --glass-bg: rgba(255, 255, 255, 0.7);
         }
         body { 
@@ -34,7 +35,8 @@
             transition: all 0.2s ease;
         }
         .card-coffee:active { transform: scale(0.98); }
-        
+        .border-light-coffee { border: 1px solid var(--light-coffee); }
+
         .glass-modal { 
             background: rgba(255, 255, 255, 0.98); 
             backdrop-filter: blur(20px); 
@@ -46,7 +48,6 @@
             border-radius: 14px; 
             font-weight: 600; 
         }
-        /* 逾期紅框樣式 */
         .overdue-border { 
             border: 2px solid #ef4444 !important; 
             background: rgba(239, 68, 68, 0.03); 
@@ -58,14 +59,44 @@
             border: none;
             border-bottom: 1px solid rgba(139, 94, 60, 0.2);
             color: var(--text-main); 
-            padding: 10px; 
-            width: 100%; 
-            outline: none; 
-            font-size: 18px;
-            text-align: center;
+            padding: 10px; width: 100%; outline: none; font-size: 18px; text-align: center;
         }
         select.modal-input { text-align-last: center; }
-        .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+        /* ✅ 儀式感動畫 */
+        @keyframes success-flash {
+            0% {
+                border-color: #22c55e;
+                background-color: #ecfdf5;
+                color: #15803d;
+                box-shadow: 0 0 0 0 rgba(34,197,94,0.5);
+                transform: scale(1);
+            }
+            40% {
+                border-color: #16a34a;
+                background-color: #dcfce7;
+                color: #166534;
+                box-shadow: 0 0 0 6px rgba(34,197,94,0.15);
+                transform: scale(1.12);
+            }
+            100% {
+                border-color: #e5e7eb;
+                background-color: transparent;
+                color: #d1d5db;
+                box-shadow: 0 0 0 0 rgba(34,197,94,0);
+                transform: scale(1);
+            }
+        }
+        .ok-flash { 
+            animation: success-flash 0.7s cubic-bezier(.22,1.2,.36,1);
+            border-color: #16a34a !important;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .animate-fadeIn { animation: fadeIn 0.2s ease-out; }
 
         @keyframes rotate {
             from { transform: rotate(0deg); }
@@ -92,24 +123,27 @@
              class="card-coffee p-5 flex items-center gap-4"
              :class="{'overdue-border': isOverdue(chore.next_due_date)}">
             
-            <button @click.stop="confirmComplete(chore)" 
-                    class="w-12 h-12 rounded-2xl border-2 border-stone-200 flex items-center justify-center text-stone-300 font-bold active:bg-stone-100 active:text-stone-600">
+            <button @click.stop="openConfirm(chore)" 
+                    :class="[
+                      'w-12 h-12 rounded-2xl border-2 flex items-center justify-center font-bold transition-all duration-200',
+                      flashingId === chore.id
+                        ? 'ok-flash'
+                        : 'border-stone-200 text-stone-300 active:bg-stone-100 active:text-stone-600'
+                    ]">
                 OK
             </button>
             
             <div class="flex-1 min-w-0" @click="openDetail(chore)">
                 <div class="flex items-baseline gap-2">
                     <span class="font-bold text-stone-800 text-lg truncate">{{ chore.name }}</span>
-                    <span class="text-[10px] text-stone-400 font-medium">每 {{ chore.frequency_value }} {{ translateUnit(chore.frequency_unit) }}</span>
+                    <span class="text-sm text-stone-400 font-medium">每 {{ chore.frequency_value }} {{ translateUnit(chore.frequency_unit) }}</span>
                 </div>
-                
                 <div class="text-xs mt-1 tracking-wide" :class="isOverdue(chore.next_due_date) ? 'text-red-500 font-bold' : 'text-stone-500'">
                     {{ isOverdue(chore.next_due_date) ? '逾期：' : '下次：' }}{{ chore.next_due_date }}
                     <span class="ml-1 opacity-80">{{ getDayDiffText(chore.next_due_date) }}</span>
                 </div>
             </div>
         </div>
-        
         <div v-if="chores.length === 0" class="text-center py-20 text-stone-300 italic">目前沒有家事</div>
     </div>
 
@@ -117,60 +151,59 @@
         <i data-lucide="plus" class="w-7 h-7"></i>
     </button>
 
+    <div v-if="modals.confirm" class="fixed inset-0 bg-black/30 backdrop-blur-sm z-[300] flex items-center justify-center p-6">
+        <div class="bg-white/95 backdrop-blur-xl w-full max-w-sm rounded-3xl p-8 text-center shadow-2xl animate-fadeIn">
+            <h3 class="text-lg font-bold text-stone-800 mb-2">確認完成？</h3>
+            <p class="text-stone-500 mb-8 font-medium">「{{ confirmTarget?.name }}」</p>
+            <div class="flex gap-4">
+                <button @click="modals.confirm = false" class="flex-1 py-3 rounded-xl text-stone-400 font-medium bg-stone-100 active:bg-stone-200 transition">取消</button>
+                <button @click="executeComplete" class="flex-1 py-3 rounded-xl font-semibold text-white bg-[#8b5e3c] active:scale-95 transition shadow-lg shadow-stone-200">完成</button>
+            </div>
+        </div>
+    </div>
+
     <div v-if="modals.add" class="fixed inset-0 bg-stone-900/20 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
         <div class="glass-modal w-full p-8 space-y-6 text-center shadow-2xl">
             <h2 class="text-lg font-bold text-stone-700">{{ isEditing ? '編輯家事設定' : '新增家事' }}</h2>
             <div class="space-y-6">
-                <div>
-                    <p class="text-[10px] text-stone-400 uppercase mb-1">家事名稱</p>
-                    <input v-model="form.name" type="text" placeholder="例如：掃地" class="modal-input">
-                </div>
-                <div>
-                    <p class="text-[10px] text-stone-400 uppercase mb-1">清潔頻率</p>
+                <div><p class="text-sm text-stone-400 uppercase mb-1">家事名稱</p><input v-model="form.name" type="text" class="modal-input"></div>
+                <div><p class="text-sm text-stone-400 uppercase mb-1">清潔頻率</p>
                     <div class="flex items-center gap-2">
                         <input v-model.number="form.freqVal" type="number" @input="calcNextDate" class="modal-input">
                         <select v-model="form.freqUnit" @change="calcNextDate" class="modal-input">
-                            <option value="day">天</option>
-                            <option value="week">週</option>
-                            <option value="month">月</option>
-                            <option value="year">年</option>
+                            <option value="day">天</option><option value="week">週</option><option value="month">月</option><option value="year">年</option>
                         </select>
                     </div>
                 </div>
-                <div>
-                    <p class="text-[10px] text-stone-400 uppercase mb-1">下次日期</p>
-                    <input v-model="form.date" type="date" class="modal-input">
-                </div>
+                <div><p class="text-sm text-stone-400 uppercase mb-1">下次日期</p><input v-model="form.date" type="date" class="modal-input"></div>
             </div>
             <div class="flex gap-4 pt-4">
                 <button @click="modals.add = false" class="flex-1 text-stone-400 text-sm">取消</button>
                 <button @click="saveChore" class="flex-2 btn-coffee py-3 px-8 shadow-md">儲存</button>
             </div>
-            <button v-if="isEditing" @click="deleteChore" class="text-red-300 text-xs mt-2">刪除此項目</button>
+            <button v-if="isEditing" @click="deleteChore" class="text-red-500 text-sm mt-2">刪除此項目</button>
         </div>
     </div>
 
     <div v-if="modals.detail" class="fixed inset-0 bg-stone-900/10 z-[90] flex items-end">
-        <div class="bg-white w-full h-[85vh] rounded-t-[32px] p-8 overflow-y-auto safe-bottom shadow-2xl">
-            <div class="flex justify-between items-start mb-6 text-center relative">
+        <div class="bg-white w-full h-[85vh] rounded-t-[32px] p-8 overflow-y-auto shadow-2xl safe-bottom">
+            <div class="flex justify-between items-start mb-6 text-center relative w-full">
                 <div class="w-full">
                     <h2 class="text-2xl font-bold text-stone-800">{{ activeChore.name }}</h2>
-                    <p class="text-stone-400 text-sm mt-1">頻率：每 {{ activeChore.frequency_value }} {{ translateUnit(activeChore.frequency_unit) }}</p>
+                    <p class="text-stone-400 text-xs mt-1">每 {{ activeChore.frequency_value }} {{ translateUnit(activeChore.frequency_unit) }}</p>
                 </div>
-                <button @click="modals.detail = false" class="absolute right-0 p-2 bg-stone-100 rounded-full text-stone-400">
-                    <i data-lucide="x" class="w-5 h-5"></i>
-                </button>
+                <button @click="modals.detail = false" class="absolute right-0 p-2 bg-stone-100 rounded-full text-stone-400"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
-            <button @click="startEditChore" class="w-full py-3 mb-8 bg-stone-50 rounded-xl text-sm text-stone-500 font-medium">修改設定</button>
+            <button @click="startEditChore" class="w-full py-3 mb-8 bg-stone-50 border-light-coffee rounded-xl text-sm text-stone-500 font-medium">修改設定</button>
             <h3 class="text-sm font-bold tracking-[0.2em] text-stone-300 uppercase mb-4 text-center">完成紀錄</h3>
             <div class="space-y-4">
-                <div v-for="log in choreLogs" :key="log.id" class="p-5 bg-stone-50 rounded-2xl border border-stone-100">
+                <div v-for="log in choreLogs" :key="log.id" class="p-5 bg-stone-50 rounded-2xl border-light-coffee">
                     <div class="flex justify-between items-center mb-3">
                         <input v-model="log.completed_at" type="date" @change="updateLog(log)" class="bg-transparent border-none p-0 text-stone-700 text-sm font-bold w-auto">
-                        <button @click="deleteLog(log.id)" class="text-stone-300"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        <button @click="deleteLog(log.id)" class="text-stone-300 active:text-red-400 transition-colors"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                     </div>
                     <textarea v-model="log.remarks" @blur="updateLog(log)" placeholder="輸入備註..." class="bg-transparent border-none p-0 text-stone-500 text-sm resize-none w-full h-10 outline-none"></textarea>
-                    <div class="text-sm text-stone-400 mt-2">完成者：{{ log.completed_by || '未填寫' }}</div>
+                    <div class="text-[10px] text-stone-400 mt-1">完成人：{{ log.completed_by || '未填寫' }}</div>
                 </div>
                 <div v-if="choreLogs.length === 0" class="text-center py-10 text-stone-200 italic">尚無紀錄</div>
             </div>
@@ -180,7 +213,7 @@
     <div v-if="showUserModal" class="fixed inset-0 bg-white z-[200] flex items-center justify-center p-10">
         <div class="w-full space-y-8 text-center">
             <h2 class="text-xl font-bold text-stone-700 italic">輸入暱稱</h2>
-            <input v-model="userName" type="text" placeholder="輸入您的名字" class="modal-input py-4 text-2xl border-stone-200">
+            <input v-model="userName" type="text" class="modal-input py-4 text-2xl border-stone-200">
             <button @click="saveUser" class="w-full btn-coffee py-4 shadow-lg text-lg">進入</button>
         </div>
     </div>
@@ -189,7 +222,6 @@
 
 <script>
 const { createApp, ref, onMounted, nextTick } = Vue;
-
 const SB_URL = 'https://kwrefnmhjuwnvfipxdyq.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3cmVmbm1oanV3bnZmaXB4ZHlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyOTQ4NTksImV4cCI6MjA4Njg3MDg1OX0.jthw2efO6SSzIm0PpY0scQ9cBrAtByEzxxrzz1YOHlc';
 const sb = supabase.createClient(SB_URL, SB_KEY);
@@ -199,11 +231,13 @@ createApp({
         const chores = ref([]);
         const choreLogs = ref([]);
         const activeChore = ref(null);
+        const confirmTarget = ref(null);
         const userName = ref(localStorage.getItem('chore_user') || '');
         const showUserModal = ref(false);
         const isEditing = ref(false);
         const isRefreshing = ref(false);
-        const modals = ref({ add: false, detail: false });
+        const flashingId = ref(null);
+        const modals = ref({ add: false, detail: false, confirm: false });
         const form = ref({ id: null, name: '', freqVal: 1, freqUnit: 'day', date: '' });
 
         const rf = () => nextTick(() => lucide.createIcons());
@@ -222,52 +256,27 @@ createApp({
 
         const getDayDiffText = (dateStr) => {
             if (!dateStr) return "";
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const target = new Date(dateStr);
-            target.setHours(0, 0, 0, 0);
-            
-            const diffTime = target - today;
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const target = new Date(dateStr); target.setHours(0, 0, 0, 0);
+            const diffDays = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
             if (diffDays === 0) return "(今天)";
-            if (diffDays > 0) return `(還有 ${diffDays} 天)`;
-            return `(逾期 ${Math.abs(diffDays)} 天)`;
+            return diffDays > 0 ? `(還有 ${diffDays} 天)` : `(逾期 ${Math.abs(diffDays)} 天)`;
         };
 
-        const openAdd = () => {
-            isEditing.value = false;
-            form.value = { id: null, name: '', freqVal: 1, freqUnit: 'day', date: new Date().toLocaleDateString('en-CA') };
-            modals.value.add = true;
-            rf();
+        const openConfirm = (chore) => {
+            confirmTarget.value = chore;
+            modals.value.confirm = true;
         };
 
-        const calcNextDate = () => {
-            let d = new Date();
-            const v = parseInt(form.value.freqVal) || 1;
-            if (form.value.freqUnit === 'day') d.setDate(d.getDate() + v);
-            else if (form.value.freqUnit === 'week') d.setDate(d.getDate() + v * 7);
-            else if (form.value.freqUnit === 'month') d.setMonth(d.getMonth() + v);
-            else if (form.value.freqUnit === 'year') d.setFullYear(d.getFullYear() + v);
-            form.value.date = d.toLocaleDateString('en-CA');
-        };
+        const executeComplete = async () => {
+            const chore = confirmTarget.value;
+            if (!chore) return;
+            modals.value.confirm = false;
 
-        const saveChore = async () => {
-            if (!form.value.name) return;
-            const payload = {
-                name: form.value.name,
-                frequency_value: form.value.freqVal,
-                frequency_unit: form.value.freqUnit,
-                next_due_date: form.value.date
-            };
-            if (isEditing.value) await sb.from('chores').update(payload).eq('id', form.value.id);
-            else await sb.from('chores').insert([payload]);
-            modals.value.add = false;
-            fetchChores();
-        };
+            flashingId.value = chore.id;
+            await nextTick();
+            await new Promise(r => requestAnimationFrame(r));
 
-        const confirmComplete = async (chore) => {
-            if (!confirm(`確認已完成「${chore.name}」？`)) return;
             await sb.from('chore_logs').insert([{
                 chore_id: chore.id,
                 completed_by: userName.value,
@@ -282,7 +291,58 @@ createApp({
             else d.setFullYear(d.getFullYear() + v);
             
             await sb.from('chores').update({ next_due_date: d.toLocaleDateString('en-CA') }).eq('id', chore.id);
+            
+            setTimeout(() => {
+                flashingId.value = null;
+                fetchChores();
+            }, 750);
+        };
+
+        const saveChore = async () => {
+            const payload = {
+                name: form.value.name,
+                frequency_value: form.value.freqVal,
+                frequency_unit: form.value.freqUnit,
+                next_due_date: form.value.date
+            };
+            if (isEditing.value) await sb.from('chores').update(payload).eq('id', form.value.id);
+            else await sb.from('chores').insert([payload]);
+            modals.value.add = false;
             fetchChores();
+        };
+
+        const deleteChore = async () => {
+            if (confirm('確定刪除此項目與所有紀錄？')) {
+                await sb.from('chores').delete().eq('id', form.value.id);
+                modals.value.add = false;
+                fetchChores();
+            }
+        };
+
+        const openAdd = () => {
+            isEditing.value = false;
+            form.value = { id: null, name: '', freqVal: 1, freqUnit: 'day', date: new Date().toLocaleDateString('en-CA') };
+            modals.value.add = true;
+            rf();
+        };
+
+        const startEditChore = () => {
+            const c = activeChore.value;
+            isEditing.value = true;
+            form.value = { id: c.id, name: c.name, freqVal: c.frequency_value, freqUnit: c.frequency_unit, date: c.next_due_date };
+            modals.value.detail = false;
+            modals.value.add = true;
+            rf();
+        };
+
+        const calcNextDate = () => {
+            let d = new Date();
+            const v = form.value.freqVal || 1;
+            if (form.value.freqUnit === 'day') d.setDate(d.getDate() + v);
+            else if (form.value.freqUnit === 'week') d.setDate(d.getDate() + v * 7);
+            else if (form.value.freqUnit === 'month') d.setMonth(d.getMonth() + v);
+            else d.setFullYear(d.getFullYear() + v);
+            form.value.date = d.toLocaleDateString('en-CA');
         };
 
         const openDetail = async (chore) => {
@@ -298,55 +358,34 @@ createApp({
         };
 
         const deleteLog = async (id) => {
-            if (confirm('刪除？')) {
+            if (confirm('刪除此條紀錄？')) {
                 await sb.from('chore_logs').delete().eq('id', id);
                 openDetail(activeChore.value);
             }
         };
 
-        const startEditChore = () => {
-            const c = activeChore.value;
-            isEditing.value = true;
-            form.value = { id: c.id, name: c.name, freqVal: c.frequency_value, freqUnit: c.frequency_unit, date: c.next_due_date };
-            modals.value.detail = false;
-            modals.value.add = true;
-            rf();
-        };
-
-        const deleteChore = async () => {
-            if (confirm('確定刪除項目？')) {
-                await sb.from('chores').delete().eq('id', form.value.id);
-                modals.value.add = false;
-                fetchChores();
-            }
-        };
-
-        // ✅ 修正後的 isOverdue：使用 Date 物件比較，排除時區干擾
         const isOverdue = (dateStr) => {
             if (!dateStr) return false;
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const target = new Date(dateStr);
-            target.setHours(0, 0, 0, 0);
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const target = new Date(dateStr); target.setHours(0, 0, 0, 0);
             return target.getTime() < today.getTime();
         };
 
         const translateUnit = (u) => ({ 'day': '天', 'week': '週', 'month': '月', 'year': '年' }[u] || u);
-
-        const saveUser = () => { 
-            if (userName.value.trim()) { 
-                localStorage.setItem('chore_user', userName.value.trim()); 
-                showUserModal.value = false; 
-            } 
-        };
+        const saveUser = () => { if (userName.value.trim()) { localStorage.setItem('chore_user', userName.value.trim()); showUserModal.value = false; } };
 
         onMounted(() => {
             if (!userName.value) showUserModal.value = true;
             fetchChores();
-            setInterval(fetchChores, 30000);
         });
 
-        return { chores, choreLogs, activeChore, userName, showUserModal, modals, form, isEditing, isRefreshing, openAdd, calcNextDate, saveChore, confirmComplete, openDetail, updateLog, deleteLog, startEditChore, deleteChore, isOverdue, saveUser, translateUnit, getDayDiffText, refreshData };
+        return { 
+            chores, choreLogs, activeChore, userName, showUserModal, modals, form, 
+            isEditing, isRefreshing, flashingId, confirmTarget, openAdd, calcNextDate, 
+            saveChore, deleteChore, openConfirm, executeComplete, openDetail, 
+            updateLog, deleteLog, startEditChore, isOverdue, saveUser, 
+            translateUnit, getDayDiffText, refreshData 
+        };
     }
 }).mount('#app');
 </script>
