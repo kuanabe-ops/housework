@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>家事記錄器</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans antialiased pb-20">
+
+  <div class="max-w-md mx-auto bg-white min-h-screen shadow-md relative">
+    
+    <header class="bg-blue-600 text-white p-4 sticky top-0 z-10 shadow-md">
+      <h1 class="text-xl font-bold text-center">🏠 家事記錄器</h1>
+    </header>
+
+    <div class="p-4 bg-gray-50 border-b">
+      <h2 class="text-sm font-semibold text-gray-600 mb-2">新增家事</h2>
+      <div class="space-y-2">
+        <input type="text" id="title" placeholder="例如：洗冷氣濾網" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500">
+        
+        <div class="flex space-x-2">
+          <input type="number" id="freqNum" placeholder="頻率" value="1" min="1" class="w-1/3 p-2 border rounded">
+          <select id="freqUnit" class="w-2/3 p-2 border rounded bg-white">
+            <option value="day">天</option>
+            <option value="week">週</option>
+            <option value="month">月</option>
+            <option value="year">年</option>
+          </select>
+        </div>
+        
+        <div>
+          <label class="text-xs text-gray-500">下次打掃日期 (可手動修改)：</label>
+          <input type="date" id="nextDate" class="w-full p-2 border rounded">
+        </div>
+
+        <button onclick="addChore()" class="w-full bg-blue-500 text-white p-2 rounded font-bold hover:bg-blue-600">
+          加入項目
+        </button>
+      </div>
+    </div>
+
+    <div class="p-4">
+      <h2 class="text-sm font-semibold text-gray-600 mb-3">待辦清單 (可長按拖曳排序)</h2>
+      <div id="choreList" class="space-y-3">
+        </div>
+    </div>
+
+    <div id="detailModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-end">
+      <div class="bg-white w-full h-4/5 rounded-t-2xl p-4 overflow-y-auto transform transition-transform">
+        <div class="flex justify-between items-center mb-4">
+          <h2 id="modalTitle" class="text-xl font-bold">家事詳情</h2>
+          <button onclick="closeModal()" class="text-gray-500 text-2xl">&times;</button>
+        </div>
+        
+        <div class="bg-blue-50 p-4 rounded-lg mb-4 border border-blue-100">
+          <h3 class="font-bold mb-2 text-blue-800">打掃完成了嗎？</h3>
+          <input type="date" id="doneDate" class="w-full p-2 border rounded mb-2">
+          <textarea id="doneNote" placeholder="加入備註 (選填)" class="w-full p-2 border rounded mb-2 h-16"></textarea>
+          <button onclick="markDone()" class="w-full bg-green-500 text-white p-2 rounded font-bold">
+            <i class="fa-solid fa-check"></i> 紀錄完成並更新下次日期
+          </button>
+        </div>
+
+        <h3 class="font-bold text-gray-700 border-b pb-2 mb-2">歷史完成紀錄</h3>
+        <div id="logList" class="space-y-2">
+          </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // --- 1. Supabase 初始化 ---
+    const SUPABASE_URL = 'https://vajyuycmobjbrawpcrsq.supabase.co';
+    const SUPABASE_ANON_KEY = 'EyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhanl1eWNtb2picmF3cGNyc3FxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NTAwNDcsImV4cCI6MjA4NzMyNjA0N30.iwzVgl-MZuZk_u9Wc7eFRL0tRBBfGU2pmiQksxHiTY0';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let chores = [];
+    let currentChoreId = null;
+
+    // --- 2. 頻率與日期連動邏輯 ---
+    const freqNumInput = document.getElementById('freqNum');
+    const freqUnitInput = document.getElementById('freqUnit');
+    const nextDateInput = document.getElementById('nextDate');
+
+    function calculateNextDate() {
+      const num = parseInt(freqNumInput.value) || 0;
+      const unit = freqUnitInput.value;
+      const date = new Date();
+      
+      if (unit === 'day') date.setDate(date.getDate() + num);
+      if (unit === 'week') date.setDate(date.getDate() + (num * 7));
+      if (unit === 'month') date.setMonth(date.getMonth() + num);
+      if (unit === 'year') date.setFullYear(date.getFullYear() + num);
+      
+      nextDateInput.value = date.toISOString().split('T')[0];
+    }
+
+    freqNumInput.addEventListener('input', calculateNextDate);
+    freqUnitInput.addEventListener('change', calculateNextDate);
+    // 初始化日期
+    calculateNextDate();
+
+    // --- 3. 獲取與渲染清單 ---
+    async function fetchChores() {
+      const { data, error } = await supabase.from('chores').select('*').order('sort_order', { ascending: true });
+      if (data) {
+        chores = data;
+        renderChores();
+      }
+    }
+
+    function renderChores() {
+      const list = document.getElementById('choreList');
+      list.innerHTML = '';
+      const today = new Date().toISOString().split('T')[0];
+
+      chores.forEach(chore => {
+        const isOverdue = chore.next_due_date < today;
+        const borderClass = isOverdue ? 'border-red-500 border-2 bg-red-50' : 'border-gray-200 bg-white';
+        const textClass = isOverdue ? 'text-red-600 font-bold' : 'text-gray-500';
+
+        const card = document.createElement('div');
+        card.className = `p-4 border rounded-lg shadow-sm flex justify-between items-center cursor-pointer ${borderClass}`;
+        card.dataset.id = chore.id;
+        
+        card.innerHTML = `
+          <div class="flex-1" onclick="openModal('${chore.id}')">
+            <h3 class="font-bold text-lg">${chore.title}</h3>
+            <p class="text-sm ${textClass}">
+              ${isOverdue ? '⚠️ 已逾期：' : '下次打掃：'} ${chore.next_due_date}
+              <span class="text-gray-400 ml-2">(${chore.freq_num}${getUnitText(chore.freq_unit)}一次)</span>
+            </p>
+          </div>
+          <button onclick="deleteChore('${chore.id}')" class="text-gray-400 hover:text-red-500 p-2">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        `;
+        list.appendChild(card);
+      });
+    }
+
+    function getUnitText(unit) {
+      const map = { day: '天', week: '週', month: '月', year: '年' };
+      return map[unit];
+    }
+
+    // --- 4. 拖曳排序初始化 (SortableJS) ---
+    const sortable = new Sortable(document.getElementById('choreList'), {
+      animation: 150,
+      onEnd: async function (evt) {
+        const itemIds = Array.from(document.getElementById('choreList').children).map(el => el.dataset.id);
+        // 批次更新排序到 Supabase
+        const updates = itemIds.map((id, index) => ({ id, sort_order: index }));
+        await supabase.from('chores').upsert(updates);
+      }
+    });
+
+    // --- 5. 新增與刪除 ---
+    async function addChore() {
+      const title = document.getElementById('title').value;
+      const freq_num = document.getElementById('freqNum').value;
+      const freq_unit = document.getElementById('freqUnit').value;
+      const next_due_date = document.getElementById('nextDate').value;
+
+      if (!title) return alert('請輸入家事名稱');
+
+      const newChore = { title, freq_num, freq_unit, next_due_date, sort_order: chores.length };
+      await supabase.from('chores').insert([newChore]);
+      
+      document.getElementById('title').value = '';
+      calculateNextDate();
+      fetchChores();
+    }
+
+    async function deleteChore(id) {
+      if (confirm('確定要刪除這個項目嗎？')) {
+        await supabase.from('chores').delete().eq('id', id);
+        fetchChores();
+      }
+    }
+
+    // --- 6. Modal 與完成紀錄 ---
+    async function openModal(id) {
+      currentChoreId = id;
+      const chore = chores.find(c => c.id === id);
+      document.getElementById('modalTitle').innerText = chore.title;
+      document.getElementById('doneDate').value = new Date().toISOString().split('T')[0];
+      document.getElementById('doneNote').value = '';
+      
+      document.getElementById('detailModal').classList.remove('hidden');
+      fetchLogs(id);
+    }
+
+    function closeModal() {
+      document.getElementById('detailModal').classList.add('hidden');
+      currentChoreId = null;
+    }
+
+    async function fetchLogs(choreId) {
+      const { data } = await supabase.from('chore_logs').select('*').eq('chore_id', choreId).order('completed_date', { ascending: false });
+      const logList = document.getElementById('logList');
+      logList.innerHTML = '';
+      
+      if(data.length === 0) {
+        logList.innerHTML = '<p class="text-gray-400 text-sm">尚無完成紀錄</p>';
+        return;
+      }
+
+      data.forEach(log => {
+        logList.innerHTML += `
+          <div class="bg-gray-50 p-3 rounded border text-sm flex justify-between">
+            <div>
+              <p class="font-bold text-gray-700">${log.completed_date}</p>
+              <p class="text-gray-600">${log.note || '無備註'}</p>
+            </div>
+            <button onclick="deleteLog('${log.id}', '${choreId}')" class="text-red-400 hover:text-red-600">
+              <i class="fa-solid fa-times"></i>
+            </button>
+          </div>
+        `;
+      });
+    }
+
+    async function markDone() {
+      const date = document.getElementById('doneDate').value;
+      const note = document.getElementById('doneNote').value;
+      const chore = chores.find(c => c.id === currentChoreId);
+
+      // 1. 寫入歷史紀錄
+      await supabase.from('chore_logs').insert([{ chore_id: currentChoreId, completed_date: date, note: note }]);
+
+      // 2. 計算下次打掃日期並更新 chore
+      const d = new Date(date);
+      if (chore.freq_unit === 'day') d.setDate(d.getDate() + chore.freq_num);
+      if (chore.freq_unit === 'week') d.setDate(d.getDate() + (chore.freq_num * 7));
+      if (chore.freq_unit === 'month') d.setMonth(d.getMonth() + chore.freq_num);
+      if (chore.freq_unit === 'year') d.setFullYear(d.getFullYear() + chore.freq_num);
+      
+      const newNextDate = d.toISOString().split('T')[0];
+      await supabase.from('chores').update({ next_due_date: newNextDate }).eq('id', currentChoreId);
+
+      alert('紀錄成功！下次打掃日期已自動更新為：' + newNextDate);
+      fetchLogs(currentChoreId);
+      fetchChores(); // 更新主畫面清單
+    }
+
+    async function deleteLog(logId, choreId) {
+      if(confirm('確定刪除這筆紀錄？')) {
+        await supabase.from('chore_logs').delete().eq('id', logId);
+        fetchLogs(choreId);
+      }
+    }
+
+    // 初始化啟動
+    fetchChores();
+
+  </script>
+</body>
+</html>
