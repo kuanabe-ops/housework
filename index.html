@@ -1,264 +1,337 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>家事記錄器</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Chore Master Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+	<link rel="icon" type="image/png" href="icon.png">
+	<link rel="apple-touch-icon" href="icon.png">
+    <style>
+        :root {
+            --bg-color: #fcfaf7;
+            --text-main: #5d4a3a;
+            --accent-coffee: #8b5e3c;
+            --glass-bg: rgba(255, 255, 255, 0.7);
+        }
+        body { 
+            background: var(--bg-color); 
+            color: var(--text-main); 
+            -webkit-tap-highlight-color: transparent; 
+            min-height: 100vh; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+        }
+        .card-coffee { 
+            background: var(--glass-bg); 
+            backdrop-filter: blur(10px); 
+            -webkit-backdrop-filter: blur(10px);
+            border: 1.5px solid var(--accent-coffee); /* 咖啡色邊框 */
+            border-radius: 20px; 
+            box-shadow: 0 4px 12px rgba(139, 94, 60, 0.08);
+            transition: transform 0.1s;
+        }
+        .card-coffee:active { transform: scale(0.98); }
+        
+        .glass-modal { 
+            background: rgba(255, 255, 255, 0.98); 
+            backdrop-filter: blur(20px); 
+            border-radius: 28px; 
+        }
+        .btn-coffee { 
+            background: var(--accent-coffee); 
+            color: white; 
+            border-radius: 14px; 
+            font-weight: 600; 
+        }
+        .overdue-border { 
+            border: 2px solid #ef4444 !important; 
+            background: rgba(239, 68, 68, 0.03); 
+        }
+        [v-cloak] { display: none; }
+        
+        .modal-input { 
+            background: transparent !important; 
+            border: none;
+            border-bottom: 1px solid rgba(139, 94, 60, 0.2);
+            color: var(--text-main); 
+            padding: 10px; 
+            width: 100%; 
+            outline: none; 
+            font-size: 18px;
+            text-align: center;
+        }
+        select.modal-input { text-align-last: center; }
+        .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+    </style>
 </head>
-<body class="bg-gray-100 text-gray-800 font-sans antialiased pb-20">
+<body>
 
-  <div class="max-w-md mx-auto bg-white min-h-screen shadow-md relative">
-    
-    <header class="bg-blue-600 text-white p-4 sticky top-0 z-10 shadow-md">
-      <h1 class="text-xl font-bold text-center">🏠 家事記錄器</h1>
+<div id="app" v-cloak class="max-w-[430px] mx-auto px-5 py-6">
+
+    <header class="flex justify-end mb-4">
+        <button @click="showUserModal = true" class="p-2 text-stone-400">
+            <i data-lucide="user" class="w-6 h-6"></i>
+        </button>
     </header>
 
-    <div class="p-4 bg-gray-50 border-b">
-      <h2 class="text-sm font-semibold text-gray-600 mb-2">新增家事</h2>
-      <div class="space-y-2">
-        <input type="text" id="title" placeholder="例如：洗冷氣濾網" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500">
-        
-        <div class="flex space-x-2">
-          <input type="number" id="freqNum" placeholder="頻率" value="1" min="1" class="w-1/3 p-2 border rounded">
-          <select id="freqUnit" class="w-2/3 p-2 border rounded bg-white">
-            <option value="day">天</option>
-            <option value="week">週</option>
-            <option value="month">月</option>
-            <option value="year">年</option>
-          </select>
-        </div>
-        
-        <div>
-          <label class="text-xs text-gray-500">下次打掃日期 (可手動修改)：</label>
-          <input type="date" id="nextDate" class="w-full p-2 border rounded">
-        </div>
-
-        <button onclick="addChore()" class="w-full bg-blue-500 text-white p-2 rounded font-bold hover:bg-blue-600">
-          加入項目
-        </button>
-      </div>
-    </div>
-
-    <div class="p-4">
-      <h2 class="text-sm font-semibold text-gray-600 mb-3">待辦清單 (可長按拖曳排序)</h2>
-      <div id="choreList" class="space-y-3">
-        </div>
-    </div>
-
-    <div id="detailModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-end">
-      <div class="bg-white w-full h-4/5 rounded-t-2xl p-4 overflow-y-auto transform transition-transform">
-        <div class="flex justify-between items-center mb-4">
-          <h2 id="modalTitle" class="text-xl font-bold">家事詳情</h2>
-          <button onclick="closeModal()" class="text-gray-500 text-2xl">&times;</button>
-        </div>
-        
-        <div class="bg-blue-50 p-4 rounded-lg mb-4 border border-blue-100">
-          <h3 class="font-bold mb-2 text-blue-800">打掃完成了嗎？</h3>
-          <input type="date" id="doneDate" class="w-full p-2 border rounded mb-2">
-          <textarea id="doneNote" placeholder="加入備註 (選填)" class="w-full p-2 border rounded mb-2 h-16"></textarea>
-          <button onclick="markDone()" class="w-full bg-green-500 text-white p-2 rounded font-bold">
-            <i class="fa-solid fa-check"></i> 紀錄完成並更新下次日期
-          </button>
-        </div>
-
-        <h3 class="font-bold text-gray-700 border-b pb-2 mb-2">歷史完成紀錄</h3>
-        <div id="logList" class="space-y-2">
-          </div>
-      </div>
-    </div>
-
-  </div>
-
-  <script>
-    // --- 1. Supabase 初始化 ---
-    const SUPABASE_URL = 'https://vajyuycmobjbrawpcrsq.supabase.co';
-    const SUPABASE_ANON_KEY = 'EyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhanl1eWNtb2picmF3cGNyc3FxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NTAwNDcsImV4cCI6MjA4NzMyNjA0N30.iwzVgl-MZuZk_u9Wc7eFRL0tRBBfGU2pmiQksxHiTY0';
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-    let chores = [];
-    let currentChoreId = null;
-
-    // --- 2. 頻率與日期連動邏輯 ---
-    const freqNumInput = document.getElementById('freqNum');
-    const freqUnitInput = document.getElementById('freqUnit');
-    const nextDateInput = document.getElementById('nextDate');
-
-    function calculateNextDate() {
-      const num = parseInt(freqNumInput.value) || 0;
-      const unit = freqUnitInput.value;
-      const date = new Date();
-      
-      if (unit === 'day') date.setDate(date.getDate() + num);
-      if (unit === 'week') date.setDate(date.getDate() + (num * 7));
-      if (unit === 'month') date.setMonth(date.getMonth() + num);
-      if (unit === 'year') date.setFullYear(date.getFullYear() + num);
-      
-      nextDateInput.value = date.toISOString().split('T')[0];
-    }
-
-    freqNumInput.addEventListener('input', calculateNextDate);
-    freqUnitInput.addEventListener('change', calculateNextDate);
-    // 初始化日期
-    calculateNextDate();
-
-    // --- 3. 獲取與渲染清單 ---
-    async function fetchChores() {
-      const { data, error } = await supabase.from('chores').select('*').order('sort_order', { ascending: true });
-      if (data) {
-        chores = data;
-        renderChores();
-      }
-    }
-
-    function renderChores() {
-      const list = document.getElementById('choreList');
-      list.innerHTML = '';
-      const today = new Date().toISOString().split('T')[0];
-
-      chores.forEach(chore => {
-        const isOverdue = chore.next_due_date < today;
-        const borderClass = isOverdue ? 'border-red-500 border-2 bg-red-50' : 'border-gray-200 bg-white';
-        const textClass = isOverdue ? 'text-red-600 font-bold' : 'text-gray-500';
-
-        const card = document.createElement('div');
-        card.className = `p-4 border rounded-lg shadow-sm flex justify-between items-center cursor-pointer ${borderClass}`;
-        card.dataset.id = chore.id;
-        
-        card.innerHTML = `
-          <div class="flex-1" onclick="openModal('${chore.id}')">
-            <h3 class="font-bold text-lg">${chore.title}</h3>
-            <p class="text-sm ${textClass}">
-              ${isOverdue ? '⚠️ 已逾期：' : '下次打掃：'} ${chore.next_due_date}
-              <span class="text-gray-400 ml-2">(${chore.freq_num}${getUnitText(chore.freq_unit)}一次)</span>
-            </p>
-          </div>
-          <button onclick="deleteChore('${chore.id}')" class="text-gray-400 hover:text-red-500 p-2">
-            <i class="fa-solid fa-trash"></i>
-          </button>
-        `;
-        list.appendChild(card);
-      });
-    }
-
-    function getUnitText(unit) {
-      const map = { day: '天', week: '週', month: '月', year: '年' };
-      return map[unit];
-    }
-
-    // --- 4. 拖曳排序初始化 (SortableJS) ---
-    const sortable = new Sortable(document.getElementById('choreList'), {
-      animation: 150,
-      onEnd: async function (evt) {
-        const itemIds = Array.from(document.getElementById('choreList').children).map(el => el.dataset.id);
-        // 批次更新排序到 Supabase
-        const updates = itemIds.map((id, index) => ({ id, sort_order: index }));
-        await supabase.from('chores').upsert(updates);
-      }
-    });
-
-    // --- 5. 新增與刪除 ---
-    async function addChore() {
-      const title = document.getElementById('title').value;
-      const freq_num = document.getElementById('freqNum').value;
-      const freq_unit = document.getElementById('freqUnit').value;
-      const next_due_date = document.getElementById('nextDate').value;
-
-      if (!title) return alert('請輸入家事名稱');
-
-      const newChore = { title, freq_num, freq_unit, next_due_date, sort_order: chores.length };
-      await supabase.from('chores').insert([newChore]);
-      
-      document.getElementById('title').value = '';
-      calculateNextDate();
-      fetchChores();
-    }
-
-    async function deleteChore(id) {
-      if (confirm('確定要刪除這個項目嗎？')) {
-        await supabase.from('chores').delete().eq('id', id);
-        fetchChores();
-      }
-    }
-
-    // --- 6. Modal 與完成紀錄 ---
-    async function openModal(id) {
-      currentChoreId = id;
-      const chore = chores.find(c => c.id === id);
-      document.getElementById('modalTitle').innerText = chore.title;
-      document.getElementById('doneDate').value = new Date().toISOString().split('T')[0];
-      document.getElementById('doneNote').value = '';
-      
-      document.getElementById('detailModal').classList.remove('hidden');
-      fetchLogs(id);
-    }
-
-    function closeModal() {
-      document.getElementById('detailModal').classList.add('hidden');
-      currentChoreId = null;
-    }
-
-    async function fetchLogs(choreId) {
-      const { data } = await supabase.from('chore_logs').select('*').eq('chore_id', choreId).order('completed_date', { ascending: false });
-      const logList = document.getElementById('logList');
-      logList.innerHTML = '';
-      
-      if(data.length === 0) {
-        logList.innerHTML = '<p class="text-gray-400 text-sm">尚無完成紀錄</p>';
-        return;
-      }
-
-      data.forEach(log => {
-        logList.innerHTML += `
-          <div class="bg-gray-50 p-3 rounded border text-sm flex justify-between">
-            <div>
-              <p class="font-bold text-gray-700">${log.completed_date}</p>
-              <p class="text-gray-600">${log.note || '無備註'}</p>
-            </div>
-            <button onclick="deleteLog('${log.id}', '${choreId}')" class="text-red-400 hover:text-red-600">
-              <i class="fa-solid fa-times"></i>
+    <div class="space-y-5 pb-32">
+        <div v-for="chore in chores" :key="chore.id" 
+             class="card-coffee p-5 flex items-center gap-4"
+             :class="{'overdue-border': isOverdue(chore.next_due_date)}">
+            
+            <button @click.stop="confirmComplete(chore)" 
+                    class="w-12 h-12 rounded-2xl border-2 border-stone-200 flex items-center justify-center text-stone-300 font-bold active:bg-stone-100 active:text-stone-600">
+                OK
             </button>
-          </div>
-        `;
-      });
+            
+            <div class="flex-1 min-w-0" @click="openDetail(chore)">
+                <div class="flex items-baseline gap-2">
+                    <span class="font-bold text-stone-800 text-lg truncate">{{ chore.name }}</span>
+                    <span class="text-[10px] text-stone-400 font-medium">每 {{ chore.frequency_value }} {{ translateUnit(chore.frequency_unit) }}</span>
+                </div>
+                
+                <div class="text-xs mt-1 tracking-wide" :class="isOverdue(chore.next_due_date) ? 'text-red-500 font-bold' : 'text-stone-500'">
+                    {{ isOverdue(chore.next_due_date) ? '逾期：' : '下次：' }}{{ chore.next_due_date }}
+                    <span class="ml-1 opacity-80">{{ getDayDiffText(chore.next_due_date) }}</span>
+                </div>
+            </div>
+        </div>
+        
+        <div v-if="chores.length === 0" class="text-center py-20 text-stone-300 italic">目前沒有家事</div>
+    </div>
+
+    <button @click="openAdd" class="fixed bottom-10 right-8 w-14 h-14 btn-coffee shadow-lg flex items-center justify-center z-40">
+        <i data-lucide="plus" class="w-7 h-7"></i>
+    </button>
+
+    <div v-if="modals.add" class="fixed inset-0 bg-stone-900/20 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+        <div class="glass-modal w-full p-8 space-y-6 text-center shadow-2xl">
+            <h2 class="text-lg font-bold text-stone-700">{{ isEditing ? '編輯家事設定' : '新增家事' }}</h2>
+            
+            <div class="space-y-6">
+                <div>
+                    <p class="text-[10px] text-stone-400 uppercase mb-1">家事名稱</p>
+                    <input v-model="form.name" type="text" placeholder="例如：掃地" class="modal-input">
+                </div>
+                
+                <div>
+                    <p class="text-[10px] text-stone-400 uppercase mb-1">清潔頻率</p>
+                    <div class="flex items-center gap-2">
+                        <input v-model.number="form.freqVal" type="number" @input="calcNextDate" class="modal-input">
+                        <select v-model="form.freqUnit" @change="calcNextDate" class="modal-input">
+                            <option value="day">天</option>
+                            <option value="week">週</option>
+                            <option value="month">月</option>
+                            <option value="year">年</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div>
+                    <p class="text-[10px] text-stone-400 uppercase mb-1">下次日期</p>
+                    <input v-model="form.date" type="date" class="modal-input">
+                </div>
+            </div>
+
+            <div class="flex gap-4 pt-4">
+                <button @click="modals.add = false" class="flex-1 text-stone-400 text-sm">取消</button>
+                <button @click="saveChore" class="flex-2 btn-coffee py-3 px-8 shadow-md">儲存</button>
+            </div>
+            
+            <button v-if="isEditing" @click="deleteChore" class="text-red-300 text-xs mt-2">刪除此項目</button>
+        </div>
+    </div>
+
+    <div v-if="modals.detail" class="fixed inset-0 bg-stone-900/10 z-[90] flex items-end">
+        <div class="bg-white w-full h-[85vh] rounded-t-[32px] p-8 overflow-y-auto safe-bottom shadow-2xl">
+            <div class="flex justify-between items-start mb-6 text-center relative">
+                <div class="w-full">
+                    <h2 class="text-2xl font-bold text-stone-800">{{ activeChore.name }}</h2>
+                    <p class="text-stone-400 text-sm mt-1">頻率：每 {{ activeChore.frequency_value }} {{ translateUnit(activeChore.frequency_unit) }}</p>
+                </div>
+                <button @click="modals.detail = false" class="absolute right-0 p-2 bg-stone-100 rounded-full text-stone-400">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
+            <button @click="startEditChore" class="w-full py-3 mb-8 bg-stone-50 rounded-xl text-sm text-stone-500 font-medium">
+                修改設定
+            </button>
+
+            <h3 class="text-[10px] font-bold tracking-[0.2em] text-stone-300 uppercase mb-4 text-center">完成紀錄</h3>
+            <div class="space-y-4">
+                <div v-for="log in choreLogs" :key="log.id" class="p-5 bg-stone-50 rounded-2xl border border-stone-100">
+                    <div class="flex justify-between items-center mb-3">
+                        <input v-model="log.completed_at" type="date" @change="updateLog(log)" class="bg-transparent border-none p-0 text-stone-700 text-sm font-bold w-auto">
+                        <button @click="deleteLog(log.id)" class="text-stone-300"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                    </div>
+                    <textarea v-model="log.remarks" @blur="updateLog(log)" placeholder="輸入備註..." class="bg-transparent border-none p-0 text-stone-500 text-sm resize-none w-full h-10 outline-none"></textarea>
+                    <div class="text-[10px] text-stone-400 mt-2">完成者：{{ log.completed_by || '未填寫' }}</div>
+                </div>
+                <div v-if="choreLogs.length === 0" class="text-center py-10 text-stone-200 italic">尚無紀錄</div>
+            </div>
+        </div>
+    </div>
+
+    <div v-if="showUserModal" class="fixed inset-0 bg-white z-[200] flex items-center justify-center p-10">
+        <div class="w-full space-y-8 text-center">
+            <h2 class="text-xl font-bold text-stone-700 italic">輸入暱稱</h2>
+            <input v-model="userName" type="text" placeholder="輸入您的名字" class="modal-input py-4 text-2xl border-stone-200">
+            <button @click="saveUser" class="w-full btn-coffee py-4 shadow-lg text-lg">進入</button>
+        </div>
+    </div>
+
+</div>
+
+<script>
+const { createApp, ref, onMounted, nextTick } = Vue;
+
+const SB_URL = 'https://kwrefnmhjuwnvfipxdyq.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3cmVmbm1oanV3bnZmaXB4ZHlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyOTQ4NTksImV4cCI6MjA4Njg3MDg1OX0.jthw2efO6SSzIm0PpY0scQ9cBrAtByEzxxrzz1YOHlc';
+const sb = supabase.createClient(SB_URL, SB_KEY);
+
+createApp({
+    setup() {
+        const chores = ref([]);
+        const choreLogs = ref([]);
+        const activeChore = ref(null);
+        const userName = ref(localStorage.getItem('chore_user') || '');
+        const showUserModal = ref(false);
+        const isEditing = ref(false);
+        const modals = ref({ add: false, detail: false });
+        const form = ref({ id: null, name: '', freqVal: 1, freqUnit: 'day', date: '' });
+
+        const rf = () => nextTick(() => lucide.createIcons());
+
+        const fetchChores = async () => {
+            const { data } = await sb.from('chores').select('*').order('next_due_date', { ascending: true });
+            chores.value = data || [];
+            rf();
+        };
+
+        const getDayDiffText = (dateStr) => {
+            if (!dateStr) return "";
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const target = new Date(dateStr);
+            target.setHours(0, 0, 0, 0);
+            
+            const diffTime = target - today;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            if (diffDays === 0) return "(今天)";
+            if (diffDays > 0) return `(還有 ${diffDays} 天)`;
+            return `(逾期 ${Math.abs(diffDays)} 天)`;
+        };
+
+        const openAdd = () => {
+            isEditing.value = false;
+            form.value = { id: null, name: '', freqVal: 1, freqUnit: 'day', date: new Date().toISOString().split('T')[0] };
+            modals.value.add = true;
+            rf();
+        };
+
+        const calcNextDate = () => {
+            let d = new Date();
+            const v = parseInt(form.value.freqVal) || 1;
+            if (form.value.freqUnit === 'day') d.setDate(d.getDate() + v);
+            else if (form.value.freqUnit === 'week') d.setDate(d.getDate() + v * 7);
+            else if (form.value.freqUnit === 'month') d.setMonth(d.getMonth() + v);
+            else if (form.value.freqUnit === 'year') d.setFullYear(d.getFullYear() + v);
+            form.value.date = d.toISOString().split('T')[0];
+        };
+
+        const saveChore = async () => {
+            if (!form.value.name) return;
+            const payload = {
+                name: form.value.name,
+                frequency_value: form.value.freqVal,
+                frequency_unit: form.value.freqUnit,
+                next_due_date: form.value.date
+            };
+            if (isEditing.value) await sb.from('chores').update(payload).eq('id', form.value.id);
+            else await sb.from('chores').insert([payload]);
+            modals.value.add = false;
+            fetchChores();
+        };
+
+        const confirmComplete = async (chore) => {
+            if (!confirm(`確認已完成「${chore.name}」？`)) return;
+            await sb.from('chore_logs').insert([{
+                chore_id: chore.id,
+                completed_by: userName.value,
+                completed_at: new Date().toISOString().split('T')[0]
+            }]);
+
+            let d = new Date();
+            const v = chore.frequency_value || 1;
+            if (chore.frequency_unit === 'day') d.setDate(d.getDate() + v);
+            else if (chore.frequency_unit === 'week') d.setDate(d.getDate() + v * 7);
+            else if (chore.frequency_unit === 'month') d.setMonth(d.getMonth() + v);
+            else d.setFullYear(d.getFullYear() + v);
+            
+            await sb.from('chores').update({ next_due_date: d.toISOString().split('T')[0] }).eq('id', chore.id);
+            fetchChores();
+        };
+
+        const openDetail = async (chore) => {
+            activeChore.value = chore;
+            const { data } = await sb.from('chore_logs').select('*').eq('chore_id', chore.id).order('completed_at', { ascending: false });
+            choreLogs.value = data || [];
+            modals.value.detail = true;
+            rf();
+        };
+
+        const updateLog = async (log) => {
+            await sb.from('chore_logs').update({ completed_at: log.completed_at, remarks: log.remarks }).eq('id', log.id);
+        };
+
+        const deleteLog = async (id) => {
+            if (confirm('刪除？')) {
+                await sb.from('chore_logs').delete().eq('id', id);
+                openDetail(activeChore.value);
+            }
+        };
+
+        const startEditChore = () => {
+            const c = activeChore.value;
+            isEditing.value = true;
+            form.value = { id: c.id, name: c.name, freqVal: c.frequency_value, freqUnit: c.frequency_unit, date: c.next_due_date };
+            modals.value.detail = false;
+            modals.value.add = true;
+            rf();
+        };
+
+        const deleteChore = async () => {
+            if (confirm('確定刪除項目？')) {
+                await sb.from('chores').delete().eq('id', form.value.id);
+                modals.value.add = false;
+                fetchChores();
+            }
+        };
+
+        const isOverdue = (date) => date && date < new Date().toISOString().split('T')[0];
+        const translateUnit = (u) => ({ 'day': '天', 'week': '週', 'month': '月', 'year': '年' }[u] || u);
+
+        const saveUser = () => { 
+            if (userName.value.trim()) { 
+                localStorage.setItem('chore_user', userName.value.trim()); 
+                showUserModal.value = false; 
+            } 
+        };
+
+        onMounted(() => {
+            if (!userName.value) showUserModal.value = true;
+            fetchChores();
+            setInterval(fetchChores, 30000);
+        });
+
+        return { chores, choreLogs, activeChore, userName, showUserModal, modals, form, isEditing, openAdd, calcNextDate, saveChore, confirmComplete, openDetail, updateLog, deleteLog, startEditChore, deleteChore, isOverdue, saveUser, translateUnit, getDayDiffText };
     }
-
-    async function markDone() {
-      const date = document.getElementById('doneDate').value;
-      const note = document.getElementById('doneNote').value;
-      const chore = chores.find(c => c.id === currentChoreId);
-
-      // 1. 寫入歷史紀錄
-      await supabase.from('chore_logs').insert([{ chore_id: currentChoreId, completed_date: date, note: note }]);
-
-      // 2. 計算下次打掃日期並更新 chore
-      const d = new Date(date);
-      if (chore.freq_unit === 'day') d.setDate(d.getDate() + chore.freq_num);
-      if (chore.freq_unit === 'week') d.setDate(d.getDate() + (chore.freq_num * 7));
-      if (chore.freq_unit === 'month') d.setMonth(d.getMonth() + chore.freq_num);
-      if (chore.freq_unit === 'year') d.setFullYear(d.getFullYear() + chore.freq_num);
-      
-      const newNextDate = d.toISOString().split('T')[0];
-      await supabase.from('chores').update({ next_due_date: newNextDate }).eq('id', currentChoreId);
-
-      alert('紀錄成功！下次打掃日期已自動更新為：' + newNextDate);
-      fetchLogs(currentChoreId);
-      fetchChores(); // 更新主畫面清單
-    }
-
-    async function deleteLog(logId, choreId) {
-      if(confirm('確定刪除這筆紀錄？')) {
-        await supabase.from('chore_logs').delete().eq('id', logId);
-        fetchLogs(choreId);
-      }
-    }
-
-    // 初始化啟動
-    fetchChores();
-
-  </script>
+}).mount('#app');
+</script>
 </body>
 </html>
